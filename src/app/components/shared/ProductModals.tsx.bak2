@@ -1,0 +1,291 @@
+"use client";
+
+import { useState, useRef } from "react";
+import { fetchJson, postJson } from "../../lib";
+import { IconButton, Input, Loading } from "../shared/UI";
+import * as XLSX from "xlsx";
+
+// ─── Modal base ──────────────────────────────────────────────────
+function ModalBackdrop({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+      }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "#fff", borderRadius: "16px", padding: "28px",
+        width: "90%", maxWidth: "680px", maxHeight: "85vh", overflow: "auto",
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── FEATURE 1: Importar Productos ───────────────────────────────
+export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{created: number; updated: number; errors: number; errorDetails: any[]} | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet);
+      setPreview(rows.slice(0, 10));
+    };
+    reader.readAsArrayBuffer(f);
+  }
+
+  async function doImport() {
+    if (!file) return;
+    setLoading(true);
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+      const mapped = rows.map(r => ({
+        sku: String(r.SKU || r.sku || ""),
+        sku_externo: String(r.CODIGO || r.codigo_externo || r.sku_externo || ""),
+        name: String(r.NOMBRE || r.nombre || r.name || ""),
+        description: String(r.DESCRIPCION || r.descripcion || r.description || ""),
+        commercial_description: String(r.DESCRIPCION_COMERCIAL || r.comercial || r.commercial_description || ""),
+        price: parseFloat(r.PRECIO || r.precio || r.price || 0),
+        cost_price: parseFloat(r.COSTO || r.costo || r.cost_price || 0),
+        unit: String(r.UNIDAD || r.unit || "unidad"),
+        stock_quantity: parseInt(r.STOCK || r.stock || r.stock_quantity || 0),
+        min_stock: parseInt(r.MINIMO || r.minimo || r.min_stock || 0),
+        category: String(r.CATEGORIA || r.categoria || r.category || "General"),
+        brand: String(r.MARCA || r.marca || r.brand || "Generica"),
+        is_active: true,
+      }));
+      const res = await postJson<any>("/products/import", { products: mapped });
+      setResult(res);
+    } catch (e: any) {
+      setResult({ created: 0, updated: 0, errors: 1, errorDetails: [{error: e.message}] });
+    }
+    setLoading(false);
+  }
+
+  function downloadTemplate() {
+    const template = [
+      { SKU: "EJEMPLO-001", NOMBRE: "Producto ejemplo", CATEGORIA: "Ropa", MARCA: "Nike",
+        PRECIO: 15000, COSTO: 8000, STOCK: 10, MINIMO: 2, UNIDAD: "unidad",
+        DESCRIPCION: "Descripción larga", DESCRIPCION_COMERCIAL: "Descripción para venta", CODIGO: "EXT-001" }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Productos");
+    XLSX.writeFile(wb, "plantilla_productos.xlsx");
+  }
+
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <h3 style={{ margin: "0 0 16px", fontSize: 18 }}>📥 Importar Productos</h3>
+
+      {!result ? (<>
+        <button onClick={downloadTemplate} style={{
+          padding: "8px 16px", background: "#f0f0f0", border: "none", borderRadius: 8, cursor: "pointer", marginBottom: 16,
+        }}>
+          📄 Descargar plantilla
+        </button>
+        <p style={{ fontSize: 13, color: "#888", marginBottom: 12 }}>
+          Columnas: SKU, NOMBRE, CATEGORIA, MARCA, PRECIO, COSTO, STOCK, MINIMO, UNIDAD, DESCRIPCION, DESCRIPCION_COMERCIAL, CODIGO
+        </p>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{ marginBottom: 12 }} />
+        {preview.length > 0 && (
+          <div style={{ fontSize: 12, background: "#f9f9f9", padding: 10, borderRadius: 8, marginBottom: 12 }}>
+            <strong>Vista previa ({preview.length} filas):</strong>
+            <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0" }}>{JSON.stringify(preview, null, 2)}</pre>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <IconButton variant="secondary" onClick={onClose}>Cancelar</IconButton>
+          <IconButton variant="primary" onClick={doImport} disabled={!file || loading}>
+            {loading ? "Importando..." : "Importar"}
+          </IconButton>
+        </div>
+      </>) : (
+        <div>
+          <p>✅ <strong>Creados:</strong> {result.created}</p>
+          <p>🔄 <strong>Actualizados:</strong> {result.updated}</p>
+          <p>❌ <strong>Errores:</strong> {result.errors}</p>
+          {result.errorDetails?.length > 0 && (
+            <div style={{ fontSize: 12, color: "#c00", maxHeight: 200, overflow: "auto", background: "#fee", padding: 10, borderRadius: 8 }}>
+              {result.errorDetails.map((e, i) => <p key={i}>{e.sku || e.name}: {e.error}</p>)}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+            <IconButton variant="primary" onClick={() => { onDone(); onClose(); }}>Listo</IconButton>
+          </div>
+        </div>
+      )}
+    </ModalBackdrop>
+  );
+}
+
+// ─── FEATURE 2: Exportar Reporte Excel ───────────────────────────
+export function ExportReportButton({ products }: { products: any[] }) {
+  async function doExport() {
+    const data = await fetchJson<any[]>("/products/report");
+    const rows = data.map((p: any) => ({
+      SKU: p.sku, CODIGO: p.sku_externo, NOMBRE: p.name,
+      CATEGORIA: p.category_name, MARCA: p.brand_name,
+      PRECIO: p.price, COSTO: p.cost_price, MARGEN: p.price - p.cost_price,
+      STOCK: p.stock_quantity, MINIMO: p.min_stock,
+      ACTIVO: p.is_active ? "Si" : "No",
+      PREMIUM: p.is_premium ? "Si" : "No", NIVEL: p.premium_level,
+      ATRIBUTO: p.attributes?.map((a: any) => a.attr_name + ": " + a.value).join(", ") || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Reporte Productos");
+    // Auto-width
+    const colWidths = Object.keys(rows[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
+    ws["!cols"] = colWidths;
+    XLSX.writeFile(wb, "reporte_productos.xlsx");
+  }
+  return (
+    <IconButton variant="secondary" title="Exportar reporte Excel" onClick={doExport}>📊</IconButton>
+  );
+}
+
+// ─── FEATURE 3: Modal Actualizar Costos ──────────────────────────
+export function UpdateCostModal({
+  products, allProducts, inputItems, onClose, onDone,
+}: {
+  products: any[]; allProducts: any[]; inputItems: any[];
+  onClose: () => void; onDone: () => void;
+}) {
+  const [mode, setMode] = useState<"product" | "input">("product");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [newCost, setNewCost] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<number | null>(null);
+
+  const items = mode === "product" ? allProducts : inputItems;
+
+  function toggleAll() {
+    if (selectAll) setSelectedIds([]);
+    else setSelectedIds(items.map((i: any) => i.id));
+    setSelectAll(!selectAll);
+  }
+
+  function toggleItem(id: number) {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+    setSelectAll(false);
+  }
+
+  async function doUpdate() {
+    if (!selectedIds.length || !newCost) return;
+    setLoading(true);
+    try {
+      const endpoint = mode === "product" ? "/products/update-costs" : "/input-items/update-costs";
+      const body = mode === "product"
+        ? { productIds: selectedIds, newCostPrice: parseFloat(newCost) }
+        : { inputItemIds: selectedIds, newCost: parseFloat(newCost) };
+      const res = await postJson<any>(endpoint, body);
+      setResult(res.updated);
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <h3 style={{ margin: "0 0 16px", fontSize: 18 }}>💰 Actualizar Costos</h3>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button onClick={() => { setMode("product"); setSelectedIds([]); setSelectAll(false); }}
+          style={{ padding: "6px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+            background: mode === "product" ? "#6c63ff" : "#f0f0f0",
+            color: mode === "product" ? "#fff" : "#333" }}>
+          Productos
+        </button>
+        <button onClick={() => { setMode("input"); setSelectedIds([]); setSelectAll(false); }}
+          style={{ padding: "6px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+            background: mode === "input" ? "#6c63ff" : "#f0f0f0",
+            color: mode === "input" ? "#fff" : "#333" }}>
+          Insumos
+        </button>
+      </div>
+
+      {!result ? (<>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 13 }}>
+            <input type="checkbox" checked={selectAll} onChange={toggleAll} />
+            {mode === "product" ? "Todos los productos" : "Todos los insumos"}
+          </label>
+          <span style={{ fontSize: 12, color: "#888" }}>{selectedIds.length} seleccionados</span>
+        </div>
+
+        <div style={{ maxHeight: 250, overflow: "auto", border: "1px solid #eee", borderRadius: 8, marginBottom: 12 }}>
+          {items.map((item: any) => (
+            <label key={item.id} style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
+              cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f5f5f5",
+              background: selectedIds.includes(item.id) ? "#f0eeff" : "transparent",
+            }}>
+              <input type="checkbox" checked={selectedIds.includes(item.id)}
+                onChange={() => toggleItem(item.id)} />
+              <span style={{ flex: 1 }}>{item.name}</span>
+              <span style={{ color: "#888" }}>
+                {mode === "product"
+                  ? `$${item.cost_price || 0}`
+                  : `$${item.default_cost || 0}`}
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+            Nuevo costo ($):
+          </label>
+          <input type="number" value={newCost} onChange={e => setNewCost(e.target.value)}
+            style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd", borderRadius: 8, fontSize: 14 }}
+            placeholder="Ej: 15000" />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ padding: "8px 20px", background: "#f0f0f0", border: "none", borderRadius: 8, cursor: "pointer" }}>
+            Cancelar
+          </button>
+          <button onClick={doUpdate} disabled={!selectedIds.length || !newCost || loading}
+            style={{ padding: "8px 20px", background: selectedIds.length && newCost ? "#6c63ff" : "#ccc",
+              color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600 }}>
+            {loading ? "Actualizando..." : `Actualizar ${selectedIds.length} items`}
+          </button>
+        </div>
+      </>) : (
+        <div>
+          <p style={{ fontSize: 16, color: "#2ecc71", fontWeight: 600 }}>
+            ✅ {result} {mode === "product" ? "productos" : "insumos"} actualizados
+          </p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+            <button onClick={() => { onDone(); onClose(); }}
+              style={{ padding: "8px 20px", background: "#6c63ff", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>
+              Listo
+            </button>
+          </div>
+        </div>
+      )}
+    </ModalBackdrop>
+  );
+}
