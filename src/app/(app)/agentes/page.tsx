@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { fetchJson, postJson, putJson, deleteJson } from "../../lib";
 import ChatPanel from "../../components/ChatPanel";
+import WhatsAppQRModal from "../../components/WhatsAppQRModal";
 import { Card, IconButton, Button, Input, Select, PageTitle, Loading, Empty, Badge } from "../../components/shared/UI";
 import {
   DndContext,
@@ -70,6 +71,7 @@ export default function AgentesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"instrucciones" | "procedimientos">("instrucciones");
   const [configVersion, setConfigVersion] = useState(0);
+  const [showQr, setShowQr] = useState(false);
 
   // Instrucciones state
   const [instructions, setInstructions] = useState<AgentInstruction[]>([]);
@@ -349,6 +351,15 @@ export default function AgentesPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <PageTitle>🤖 Mis Agentes</PageTitle>
+        <button onClick={() => setShowQr(true)}
+          style={{
+            padding: '8px 14px', fontSize: '13px', borderRadius: '8px',
+            border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.1)',
+            color: '#4ade80', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+            fontWeight: 500, whiteSpace: 'nowrap'
+          }}>
+          📱 WhatsApp QR
+        </button>
       </div>
 
       {loading ? <Loading /> : agents.length === 0 ? (
@@ -695,6 +706,7 @@ export default function AgentesPage() {
           </div>
         </div>
       )}
+      <WhatsAppQRModal open={showQr} onClose={() => setShowQr(false)} />
     </div>
   );
 }
