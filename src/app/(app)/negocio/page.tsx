@@ -41,6 +41,7 @@ type User = {
   phone: string;
   telegram_id: string;
   rol: string;
+  can_escalate: boolean;
 };
 
 
@@ -91,7 +92,7 @@ export default function NegocioPage() {
 
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formUser, setFormUser] = useState({ username: "", password: "", name: "", email: "", phone: "", telegram_id: "", rol: "operator" });
+  const [formUser, setFormUser] = useState({ username: "", password: "", name: "", email: "", phone: "", telegram_id: "", rol: "operator", can_escalate: false });
 
   function loadData() {
     setLoading(true);
@@ -171,23 +172,23 @@ export default function NegocioPage() {
 
   function openNewUser() {
     setEditingUser(null);
-    setFormUser({ username: "", password: "", name: "", email: "", phone: "", telegram_id: "", rol: "operator" });
+    setFormUser({ username: "", password: "", name: "", email: "", phone: "", telegram_id: "", rol: "operator", can_escalate: false });
     setShowUserForm(true);
   }
 
   function openEditUser(u: User) {
     setEditingUser(u);
-    setFormUser({ username: u.username, password: "", name: u.name || "", email: u.email || "", phone: u.phone || "", telegram_id: u.telegram_id || "", rol: u.rol });
+    setFormUser({ username: u.username, password: "", name: u.name || "", email: u.email || "", phone: u.phone || "", telegram_id: u.telegram_id || "", rol: u.rol, can_escalate: u.can_escalate });
     setShowUserForm(true);
   }
 
   async function handleSaveUser() {
     try {
       if (editingUser) {
-        await putJson(`/users/${editingUser.id}`, { name: formUser.name, email: formUser.email, phone: formUser.phone, telegram_id: formUser.telegram_id, rol: formUser.rol });
+        await putJson(`/users/${editingUser.id}`, { name: formUser.name, email: formUser.email, phone: formUser.phone, telegram_id: formUser.telegram_id, rol: formUser.rol, can_escalate: formUser.can_escalate });
       } else {
         if (!formUser.username || !formUser.password) return alert("Usuario y contrasenia requeridos");
-        await postJson("/users", formUser);
+        await postJson("/users", { ...formUser, can_escalate: formUser.can_escalate });
       }
       setShowUserForm(false);
       loadData();
@@ -435,6 +436,11 @@ export default function NegocioPage() {
                   {u.telegram_id && <span style={{ marginLeft: "8px" }}>✈️ {u.telegram_id}</span>}
                 </div>
                 </div>
+                {u.can_escalate && (
+                  <div style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, background: "#6c63ff22", color: "#6c63ff" }}>
+                    🚀 Escalar
+                  </div>
+                )}
                 <div style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "11px", fontWeight: 600, background: (ROL_COLORS[u.rol] || "#888") + "22", color: ROL_COLORS[u.rol] || "#888" }}>
                   {u.rol}
                 </div>
@@ -468,6 +474,18 @@ export default function NegocioPage() {
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
               </select>
+            </div>
+            <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <input
+                type="checkbox"
+                id="can_escalate"
+                checked={formUser.can_escalate}
+                onChange={(e) => setFormUser({ ...formUser, can_escalate: e.target.checked })}
+                style={{ width: "18px", height: "18px", cursor: "pointer" }}
+              />
+              <label htmlFor="can_escalate" style={{ fontSize: "13px", fontWeight: 600, color: "#555", cursor: "pointer" }}>
+                Puede recibir escalaciones
+              </label>
             </div>
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
               <Button variant="secondary" onClick={() => setShowUserForm(false)}>Cancelar</Button>
